@@ -1,7 +1,6 @@
 package main
 
 import (
-	"./vhd"
 	"fmt"
 	"github.com/codegangsta/cli"
 	"github.com/dustin/go-humanize"
@@ -9,7 +8,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"github.com/thales-e-security/go-vhd/vhd"
 )
+const PKG_NAME = "go-vhd"
+const PKG_VERSION = "0.1"
 
 func createVHD(file, size string, options vhd.VHDOptions) {
 

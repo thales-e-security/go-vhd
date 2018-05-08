@@ -27,12 +27,6 @@ func uuidgenBytes() []byte {
 	return b
 }
 
-func check(e error) {
-	if e != nil {
-		panic(e)
-	}
-}
-
 func hexs(a []byte) string {
 	return "0x" + hex.EncodeToString(a[:])
 }
@@ -46,12 +40,10 @@ func uuid(a []byte) string {
 		a[10:16])
 }
 
-func uuidToBytes(uuid string) []byte {
+func uuidToBytes(uuid string) (out []byte, err error )  {
 	s := strings.Replace(uuid, "-", "", -1)
-	h, err := hex.DecodeString(s)
-	check(err)
+	return  hex.DecodeString(s)
 
-	return h
 }
 
 /*

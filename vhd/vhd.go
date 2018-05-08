@@ -25,8 +25,8 @@ const VHD_EXTRA_HEADER_SIZE = 1024
 
 // A VDH file
 type VHD struct {
-	Footer      VHDHeader
-	ExtraHeader VHDExtraHeader
+	Footer      *VHDHeader
+	ExtraHeader *VHDExtraHeader
 }
 
 // VHD Header
@@ -148,8 +148,8 @@ func (h *VHDHeader) addChecksum() {
 	binary.BigEndian.PutUint32(h.Checksum[:], uint32(^checksum))
 }
 
-func CreateFixedHeader(size uint64, options *VHDOptions) VHDHeader {
-	header := VHDHeader{}
+func CreateFixedHeader(size uint64, options *VHDOptions) (vhdh *VHDHeader, err error) {
+	header := &VHDHeader{}
 	hexToField(VHD_COOKIE, header.Cookie[:])
 	hexToField("00000002", header.Features[:])
 	hexToField("00010000", header.FileFormatVersion[:])
@@ -180,25 +180,34 @@ func CreateFixedHeader(size uint64, options *VHDOptions) VHDHeader {
 	hexToField("00000000", header.Checksum[:])
 
 	if options.UUID != "" {
-		copy(header.UniqueId[:], uuidToBytes(options.UUID))
+		t, err := uuidToBytes(options.UUID)
+		if err != nil {
+			return nil, err
+		}
+		copy(header.UniqueId[:], t)
 	} else {
 		copy(header.UniqueId[:], uuidgenBytes())
 	}
 
 	header.addChecksum()
-	return header
+	return header, err
 }
 
-func RawToFixed(f *os.File, options *VHDOptions) {
+func RawToFixed(f *os.File, options *VHDOptions) (err error) {
 	info, err := f.Stat()
-	check(err)
+	if err != nil {
+		return err
+	}
 	size := uint64(info.Size())
-	header := CreateFixedHeader(size, options)
-	binary.Write(f, binary.BigEndian, header)
+	header, err := CreateFixedHeader(size, options)
+	if err != nil {
+		return err
+	}
+	return binary.Write(f, binary.BigEndian, *header)
 }
 
-func VHDCreateSparse(size uint64, name string, options VHDOptions) VHD {
-	header := VHDHeader{}
+func VHDCreateSparse(size uint64, name string, options VHDOptions) (vhd *VHD, err error) {
+	header := &VHDHeader{}
 	hexToField(VHD_COOKIE, header.Cookie[:])
 	hexToField("00000002", header.Features[:])
 	hexToField("00010000", header.FileFormatVersion[:])
@@ -229,7 +238,11 @@ func VHDCreateSparse(size uint64, name string, options VHDOptions) VHD {
 	hexToField("00000000", header.Checksum[:])
 
 	if options.UUID != "" {
-		copy(header.UniqueId[:], uuidToBytes(options.UUID))
+		t, err := uuidToBytes(options.UUID)
+		if err != nil {
+			return nil, err
+		}
+		copy(header.UniqueId[:], t)
 	} else {
 		copy(header.UniqueId[:], uuidgenBytes())
 	}
@@ -237,7 +250,7 @@ func VHDCreateSparse(size uint64, name string, options VHDOptions) VHD {
 	header.addChecksum()
 
 	// Fill the sparse header
-	header2 := VHDExtraHeader{}
+	header2 := &VHDExtraHeader{}
 	hexToField(VHD_DYN_COOKIE, header2.Cookie[:])
 	hexToField("ffffffffffffffff", header2.DataOffset[:])
 	// header size + sparse header size
@@ -252,7 +265,6 @@ func VHDCreateSparse(size uint64, name string, options VHDOptions) VHD {
 	header2.addChecksum()
 
 	f, err := os.Create(name)
-	check(err)
 	defer f.Close()
 
 	binary.Write(f, binary.BigEndian, header)
@@ -274,22 +286,22 @@ func VHDCreateSparse(size uint64, name string, options VHDOptions) VHD {
 
 	binary.Write(f, binary.BigEndian, header)
 
-	return VHD{
+	return &VHD{
 		Footer:      header,
 		ExtraHeader: header2,
-	}
+	}, err
 }
 
 /*
  * VHD
  */
 
-func FromFile(f *os.File) (vhd VHD) {
-	vhd = VHD{}
-	vhd.Footer = readVHDFooter(f)
-	vhd.ExtraHeader = readVHDExtraHeader(f)
+func FromFile(f *os.File) (vhd *VHD, err error) {
+	vhd = &VHD{}
+	vhd.Footer, err  = readVHDFooter(f)
+	vhd.ExtraHeader, err = readVHDExtraHeader(f)
 
-	return vhd
+	return vhd, err
 }
 
 func (vhd *VHD) PrintInfo() {
@@ -390,9 +402,9 @@ func (vhd *VHD) PrintFooter() {
 */
 func calculateCHS(ts uint64) []uint {
 	var sectorsPerTrack,
-		heads,
-		cylinderTimesHeads,
-		cylinders float64
+	heads,
+	cylinderTimesHeads,
+	cylinders float64
 	totalSectors := float64(ts)
 
 	ret := make([]uint, 3)
@@ -434,11 +446,13 @@ func calculateCHS(ts uint64) []uint {
 	return ret
 }
 
-func hexToField(hexs string, field []byte) {
+func hexToField(hexs string, field []byte) (err error) {
 	h, err := hex.DecodeString(hexs)
-	check(err)
-
+	if err != nil {
+		return err
+	}
 	copy(field, h)
+	return err
 }
 
 // Return the number of blocks in the disk, diskSize in bytes
@@ -446,35 +460,34 @@ func getMaxTableEntries(diskSize uint64) uint64 {
 	return diskSize * (2 * 1024 * 1024) // block size is 2M
 }
 
-func readVHDExtraHeader(f *os.File) (header VHDExtraHeader) {
+func readVHDExtraHeader(f *os.File) (header *VHDExtraHeader, err error) {
 	buff := make([]byte, 1024)
-	_, err := f.ReadAt(buff, 512)
-	check(err)
+	_, err = f.ReadAt(buff, 512)
 
-	binary.Read(bytes.NewBuffer(buff[:]), binary.BigEndian, &header)
+	binary.Read(bytes.NewBuffer(buff[:]), binary.BigEndian, header)
 
-	return header
+	return header, err
 }
 
-func readVHDFooter(f *os.File) (header VHDHeader) {
+func readVHDFooter(f *os.File) (header *VHDHeader, err error) {
 	info, err := f.Stat()
-	check(err)
 
 	buff := make([]byte, 512)
 	_, err = f.ReadAt(buff, info.Size()-512)
-	check(err)
+	if err != nil {
+		return nil, err
+	}
 
-	binary.Read(bytes.NewBuffer(buff[:]), binary.BigEndian, &header)
+	err = binary.Read(bytes.NewBuffer(buff[:]), binary.BigEndian, &header)
 
-	return header
+	return header, err
 }
 
-func readVHDHeader(f *os.File) (header VHDHeader) {
+func readVHDHeader(f *os.File) (header *VHDHeader, err error) {
 	buff := make([]byte, 512)
-	_, err := f.ReadAt(buff, 0)
-	check(err)
+	_, err = f.ReadAt(buff, 0)
 
-	binary.Read(bytes.NewBuffer(buff[:]), binary.BigEndian, &header)
+	err = binary.Read(bytes.NewBuffer(buff[:]), binary.BigEndian, header)
 
-	return header
+	return header, err
 }
