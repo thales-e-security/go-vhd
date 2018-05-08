@@ -36,17 +36,18 @@ func rawToFixed(file string, options *vhd.VHDOptions) {
 	os.Rename(file, strings.Replace(file, filepath.Ext(file), ".vhd", -1))
 }
 
-func vhdInfo(vhdFile string) {
-
-	f, err := os.Open(vhdFile)
+func vhdInfo(vhdFile string) (err error) {
+	var f *os.File
+	f, err = os.Open(vhdFile)
 	if err != nil {
 		fmt.Printf("Error opening file %s: %s\n", vhdFile, err)
 		os.Exit(1)
 	}
 	defer f.Close()
-
-	vhd := vhd.FromFile(f)
-	vhd.PrintInfo()
+	var vhdf *vhd.VHD
+	vhdf, err = vhd.FromFile(f)
+	vhdf.PrintInfo()
+	return err
 }
 
 func main() {
