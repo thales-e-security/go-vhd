@@ -4,10 +4,10 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"os"
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
+	"crypto/rand"
 )
 
 // https://groups.google.com/forum/#!msg/golang-nuts/d0nF_k4dSx4/rPGgfXv6QCoJ
@@ -22,10 +22,8 @@ func fmtField(name, value string) {
 }
 
 func uuidgenBytes() []byte {
-	f, err := os.Open("/dev/urandom")
-	check(err)
 	b := make([]byte, 16)
-	f.Read(b)
+	rand.Read(b)
 	return b
 }
 
